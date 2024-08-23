@@ -39,21 +39,29 @@ def protect_zip(source_path, target_directory, record_directory, password):
     """Protect a ZIP file by placing it inside a new password-protected ZIP file."""
     filename = os.path.basename(source_path)
     protected_zip_path = os.path.join(target_directory, "archive.dump")
+    protected_password_path = os.path.join(target_directory, "archive.log.txt")
     version_file_path = os.path.join(record_directory, "version_hash.txt")
 
     os.makedirs(record_directory, exist_ok=True)
     os.makedirs(target_directory, exist_ok=True)
+    log_data = {
+        "name":  filename,
+        "file_path": protected_zip_path.replace("\\","/"),
+        "password": password.decode('utf8')
+    }
+    
     with open(source_path, 'rb') as f:
         content = f.read()
         enc = encrypt_aes(content, password)
         hex = hash_512(enc).hex()
         with open(protected_zip_path, 'wb') as f_write:
             f_write.write(enc)    
+        with open(protected_password_path, 'w') as f_write:
+            f_write.write(json.dumps(log_data, ensure_ascii=False, indent=4))
         with open(version_file_path, 'w') as f_write:
             f_write.write(hex)
     return True
 
-        
         
 def process_directory(source_directory, target_directory, record_directory):
     """Recursively search for ZIP files, protect them, and add to archive."""
@@ -77,49 +85,27 @@ def process_directory(source_directory, target_directory, record_directory):
     
     results = []
     for project_path, version_lists in project_map.items():
-        target_version = sorted(version_lists, key=lambda x:x[0])[-1]
-        password = generate_random_password().encode('utf8')
-        source_path = os.path.join(project_path, target_version[0], target_version[1])
-        archive_path = os.path.relpath(project_path, source_directory)
-        archive_path = os.path.join(target_directory, archive_path)
-        if os.path.isfile(os.path.join(archive_path, "archive.dump")):
-            continue
-        version_record_target = os.path.relpath(project_path, source_directory)
-        version_record_target = os.path.join(record_directory, version_record_target, target_version[0])
-        protect_zip(source_path, archive_path, version_record_target, password)
-                
-        results.append({
-            "name":  os.path.basename(source_path),
-            "file_path": os.path.join(archive_path, "archive.dump").replace("\\","/"),
-            "password": password.decode('utf8')
-        })
-        print(f"Protected and archived {source_path}")
-    
+        #target_version = sorted(version_lists, key=lambda x:x[0])[-1]
+        for target_version in version_lists:
+            password = generate_random_password().encode('utf8')
+            source_path = os.path.join(project_path, target_version[0], target_version[1])
+            archive_path = os.path.relpath(project_path, source_directory)
+            archive_path = os.path.join(target_directory, archive_path, target_version[0])
+            version_record_target = os.path.relpath(project_path, source_directory)
+            version_record_target = os.path.join(record_directory, version_record_target, target_version[0])
+            if os.path.isfile(os.path.join(version_record_target, "version.txt")):
+                continue
+            protect_zip(source_path, archive_path, version_record_target, password)
+            print(f"Protected and archived {source_path}")
     return results
 
-def save_results_to_log(results, log_directory):
-    """Save the results to a timestamped log file in JSON format."""
-    os.makedirs(log_directory, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y_%m_%d-%H-%M-%S")
-    log_file = os.path.join(log_directory, f"{timestamp}.log")
-    
-    with open(log_file, 'w') as f:
-        json.dump(results, f, indent=4, ensure_ascii=False)
-    
-    return log_file
-    
     
 # Example usage
 if __name__ == "__main__":
     source_directory = "source_archives"
     target_directory = "bin/archives"
     record_directory = "version"
-    log_directory = "bin/logs"
-    
+
     # Ensure target directory exists
     os.makedirs(target_directory, exist_ok=True)
-    os.makedirs(log_directory, exist_ok=True)
-    
-    results = process_directory(source_directory, target_directory, record_directory)
-    log_file = save_results_to_log(results, log_directory)
-    print(f"Results saved to {log_file}")
+    process_directory(source_directory, target_directory, record_directory)
