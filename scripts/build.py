@@ -35,23 +35,27 @@ def decrypt_aes(data: bytes, key: bytes) -> bytes:
     pt = cipher.decrypt(data)
     return unpad(pt, AES.block_size)
 
-def protect_zip(source_path, target_directory, password):
+def protect_zip(source_path, target_directory, record_directory, password):
     """Protect a ZIP file by placing it inside a new password-protected ZIP file."""
     filename = os.path.basename(source_path)
-    protected_zip_name = f"archive.dump"
-    protected_zip_path = os.path.join(target_directory, protected_zip_name)
+    protected_zip_path = os.path.join(target_directory, "archive.dump")
+    version_file_path = os.path.join(record_directory, "version_hash.txt")
 
+    os.makedirs(record_directory, exist_ok=True)
     os.makedirs(target_directory, exist_ok=True)
     with open(source_path, 'rb') as f:
         content = f.read()
         enc = encrypt_aes(content, password)
+        hex = hash_512(enc).hex()
         with open(protected_zip_path, 'wb') as f_write:
             f_write.write(enc)    
+        with open(version_file_path, 'w') as f_write:
+            f_write.write(hex)
     return True
 
         
         
-def process_directory(source_directory, target_directory):
+def process_directory(source_directory, target_directory, record_directory):
     """Recursively search for ZIP files, protect them, and add to archive."""
     version_pattern = re.compile(r"^v(\d+\.)+(\d+$)")
     def is_single_zip_file(file_list):
@@ -80,7 +84,9 @@ def process_directory(source_directory, target_directory):
         archive_path = os.path.join(target_directory, archive_path)
         if os.path.isfile(os.path.join(archive_path, "archive.dump")):
             continue
-        protect_zip(source_path, archive_path, password)
+        version_record_target = os.path.relpath(project_path, source_directory)
+        version_record_target = os.path.join(record_directory, version_record_target, target_version[0])
+        protect_zip(source_path, archive_path, version_record_target, password)
                 
         results.append({
             "name":  os.path.basename(source_path),
@@ -106,13 +112,14 @@ def save_results_to_log(results, log_directory):
 # Example usage
 if __name__ == "__main__":
     source_directory = "source_archives"
-    target_directory = "archives"
-    log_directory = "logs"
+    target_directory = "bin/archives"
+    record_directory = "version"
+    log_directory = "bin/logs"
     
     # Ensure target directory exists
     os.makedirs(target_directory, exist_ok=True)
-    os.makedirs('logs', exist_ok=True)
+    os.makedirs(log_directory, exist_ok=True)
     
-    results = process_directory(source_directory, target_directory)
+    results = process_directory(source_directory, target_directory, record_directory)
     log_file = save_results_to_log(results, log_directory)
     print(f"Results saved to {log_file}")
