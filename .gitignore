@@ -1,0 +1,5 @@
+source_archives/
+logs/
+pyenv-local/
+*.lnk
+*.url
